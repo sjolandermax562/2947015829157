@@ -76,7 +76,7 @@ export default async function handler(req, res) {
       .single();
 
     if (bindingError || !binding) {
-      console.error('[Twitter API] Could not find device binding:', bindingError);
+      console.error('[Community API] Could not find device binding:', bindingError);
     } else {
       const fullLicenseKey = binding.license_key;
 
@@ -87,7 +87,7 @@ export default async function handler(req, res) {
           last_seen: new Date().toISOString(),
           last_ip: ip,
           last_user_agent: userAgent,
-          last_endpoint: 'twitter'
+          last_endpoint: 'community'
         })
         .eq('device_id', payload.deviceId);
 
@@ -97,22 +97,22 @@ export default async function handler(req, res) {
         .insert({
           license_key: fullLicenseKey,
           device_id: payload.deviceId,
-          endpoint: 'twitter',
+          endpoint: 'community',
           ip_address: ip,
           user_agent: userAgent,
           credits_used: 20
         });
     }
   } catch (logError) {
-    console.error('[Twitter API] Tracking error:', logError);
+    console.error('[Community API] Tracking error:', logError);
   }
 
   try {
-    const { userName } = req.query;
-    if (!userName) return res.status(400).json({ error: 'Missing userName' });
+    const { communityId } = req.query;
+    if (!communityId) return res.status(400).json({ error: 'Missing communityId' });
 
     const apiKey = process.env.TWITTER_API_KEY;
-    const response = await fetch(`https://api.twitterapi.io/twitter/user/info?userName=${userName}`, {
+    const response = await fetch(`https://api.twitterapi.io/twitter/community/info?community_id=${communityId}`, {
       headers: { 'X-API-Key': apiKey }
     });
 
