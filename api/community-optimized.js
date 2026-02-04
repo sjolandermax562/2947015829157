@@ -94,21 +94,21 @@ export default async function handler(req, res) {
     // The Twitter API returns { community_info: {...}, status: "success" }
     const community = data.community_info || data.data?.community_info || data;
     
+    // Return in same format as original Twitter API
     const optimized = {
       status: 'success',
-      data: {
-        community_info: {
-          id: community.id || communityId,
-          name: community.name,
-          description: community.description,
-          avatar_url: community.avatar_url,
-          banner_url: community.banner_url,
-          member_count: community.member_count,
-          created_at: community.created_at,
-          // Admin info - the API returns both admin and creator
-          creator: community.creator || community.admin || null,
-          admin: community.admin || community.creator || null
-        }
+      msg: 'success',
+      community_info: {
+        id: community.id || communityId,
+        name: community.name,
+        description: community.description,
+        avatar_url: community.avatar_url,
+        banner_url: community.banner_url,
+        member_count: community.member_count,
+        created_at: community.created_at,
+        // Admin info - the API returns both admin and creator
+        creator: community.creator || community.admin || null,
+        admin: community.admin || community.creator || null
       }
     };
 
