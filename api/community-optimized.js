@@ -82,7 +82,9 @@ export default async function handler(req, res) {
 
     // Call Twitter API
     const apiKey = process.env.TWITTER_API_KEY;
-    const response = await fetch(`https://api.twitterapi.io/twitter/community/info?community_id=${communityId}`, {
+    const apiUrl = new URL('https://api.twitterapi.io/twitter/community/info');
+    apiUrl.searchParams.set('community_id', communityId);
+    const response = await fetch(apiUrl.toString(), {
       headers: { 'X-API-Key': apiKey }
     });
 
