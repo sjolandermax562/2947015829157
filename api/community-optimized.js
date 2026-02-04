@@ -91,32 +91,23 @@ export default async function handler(req, res) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Twitter API error');
 
-    // Extract only the fields we need
+    // Extract only the fields we need but KEEP original structure
     const community = data.data || data;
     
     const optimized = {
       status: 'success',
       data: {
-        // Core community info
-        id: community.id || communityId,
-        name: community.name,
-        description: community.description,
-        
-        // Media
-        avatar_url: community.avatar_url,
-        banner_url: community.banner_url,
-        
-        // Stats (minimal)
-        member_count: community.member_count,
-        
-        // Admin info (for verification)
-        admin: community.admin ? {
-          user_id: community.admin.user_id,
-          screen_name: community.admin.screen_name
-        } : null,
-        
-        // Creation date
-        created_at: community.created_at
+        community_info: {
+          id: community.id || communityId,
+          name: community.name,
+          description: community.description,
+          avatar_url: community.avatar_url,
+          banner_url: community.banner_url,
+          member_count: community.member_count,
+          created_at: community.created_at,
+          // Admin info - keep same structure as original
+          creator: community.creator || community.admin || null
+        }
       }
     };
 

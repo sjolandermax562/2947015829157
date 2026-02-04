@@ -82,14 +82,16 @@ export default async function handler(req, res) {
 
     // Call Twitter API
     const apiKey = process.env.TWITTER_API_KEY;
-    const response = await fetch(`https://api.twitterapi.io/twitter/user/info?userName=${userName}`, {
+    const apiUrl = new URL('https://api.twitterapi.io/twitter/user/info');
+    apiUrl.searchParams.set('userName', userName);
+    const response = await fetch(apiUrl.toString(), {
       headers: { 'X-API-Key': apiKey }
     });
 
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Twitter API error');
 
-    // Extract only the fields we need (profile tooltip uses these)
+    // Extract only the fields we need but KEEP original structure
     const user = data.data || data;
     
     const optimized = {
@@ -97,19 +99,27 @@ export default async function handler(req, res) {
       data: {
         // Identity
         userName: user.userName || user.screen_name,
+        screen_name: user.screen_name || user.userName,
         name: user.name || user.display_name,
+        display_name: user.display_name || user.name,
         
         // Profile media
         profilePicture: user.profilePicture || user.profile_image_url_https,
+        profile_image_url_https: user.profile_image_url_https || user.profilePicture,
         coverPicture: user.coverPicture || user.profile_banner_url,
+        profile_banner_url: user.profile_banner_url || user.coverPicture,
         
         // Bio/stats
         description: user.description || user.bio,
+        bio: user.bio || user.description,
         followers: user.followers_count || user.followers,
+        followers_count: user.followers_count || user.followers,
         following: user.friends_count || user.following,
+        friends_count: user.friends_count || user.following,
         
-        // Minimal extra fields that might be useful
+        // Verification
         verified: user.verified || user.is_blue_verified || false,
+        is_blue_verified: user.is_blue_verified || user.verified || false,
         created_at: user.created_at
       }
     };
