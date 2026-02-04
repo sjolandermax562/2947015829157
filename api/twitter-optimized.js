@@ -91,7 +91,7 @@ export default async function handler(req, res) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Twitter API error');
 
-    // Extract only the fields we need but KEEP original structure
+    // The Twitter API returns { data: {...}, status: "success" }
     const user = data.data || data;
     
     const optimized = {

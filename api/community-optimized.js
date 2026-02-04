@@ -91,8 +91,8 @@ export default async function handler(req, res) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Twitter API error');
 
-    // Extract only the fields we need but KEEP original structure
-    const community = data.data || data;
+    // The Twitter API returns { community_info: {...}, status: "success" }
+    const community = data.community_info || data.data?.community_info || data;
     
     const optimized = {
       status: 'success',
@@ -105,8 +105,9 @@ export default async function handler(req, res) {
           banner_url: community.banner_url,
           member_count: community.member_count,
           created_at: community.created_at,
-          // Admin info - keep same structure as original
-          creator: community.creator || community.admin || null
+          // Admin info - the API returns both admin and creator
+          creator: community.creator || community.admin || null,
+          admin: community.admin || community.creator || null
         }
       }
     };
