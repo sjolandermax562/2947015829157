@@ -100,7 +100,7 @@ export default async function handler(req, res) {
   try {
     const { data: versionData, error: versionError } = await supabase
       .from('extension_versions')
-      .select('*')
+      .select('minimum_version, version, download_url')
       .eq('is_active', true)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -142,7 +142,7 @@ export default async function handler(req, res) {
     // Check if license key exists and is not revoked in Supabase
     const { data: licenseData, error: licenseError } = await supabase
       .from('license_keys')
-      .select('*')
+      .select('key, revoked')
       .eq('key', key)
       .single();
 
@@ -171,7 +171,7 @@ export default async function handler(req, res) {
     // Check device binding
     const { data: existingBinding, error: fetchError } = await supabase
       .from('device_bindings')
-      .select('*')
+      .select('device_id, license_key')
       .eq('license_key', key)
       .single();
 

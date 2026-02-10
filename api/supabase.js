@@ -242,9 +242,10 @@ module.exports = async function handler(req, res) {
     console.log(`[Supabase API] ${syncType} sync requested`, lastSync ? `(since ${new Date(lastSync * 1000).toISOString()})` : '(all data)');
 
     // Build query with optional last_updated filter for incremental sync
+    // Only fetch columns actually used by the extension
     const adminsQuery = supabase
       .from('admins')
-      .select('*', { count: 'exact' })
+      .select('admin_username, total_rating, tokens_score_0, tokens_score_1, tokens_score_2, tokens_score_3, tokens_score_4, tokens_score_5, tokens_score_6, total_tokens_created, winrate, avg_migrate_time, last_active, last_updated', { count: 'exact' })
       .order('admin_username', { ascending: true });
 
     // Apply incremental filter if provided (convert seconds to milliseconds for comparison)
@@ -290,9 +291,10 @@ module.exports = async function handler(req, res) {
 
     // Build query with optional last_updated filter for incremental sync
     // IMPORTANT: Filter out tokens with NULL admin_username to avoid sending invalid tokens
+    // Only fetch columns actually used by the extension
     const tokensQuery = supabase
       .from('tokens')
-      .select('*', { count: 'exact' })
+      .select('admin_username, base_token, token_name, token_symbol, twitter_url, website_url, created_at, market_cap, ath_market_cap, token_score, last_updated', { count: 'exact' })
       .not('admin_username', 'is', null)
       .order('admin_username', { ascending: true });
 
