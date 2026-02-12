@@ -5,10 +5,10 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
-// Use service role for reading license data
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+// Use anon key - RLS policies will enforce access control
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 /**
  * Calculate days remaining until expiration
@@ -46,16 +46,17 @@ function maskLicenseKey(key) {
 }
 
 export default async function handler(req, res) {
-  // Set CORS headers FIRST
+  // Set CORS headers FIRST - allow extension and web origins
   const origin = req.headers.origin;
 
-  const allowedOrigins = [
-    origin && (origin.startsWith('chrome-extension://') || origin.startsWith('moz-extension://')),
-    origin === 'https://trade.padre.gg',
-    origin === 'https://axiom.trade'
-  ];
+  // Allow chrome-extension origins and approved web origins
+  const isExtensionOrigin = origin && (
+    origin.startsWith('chrome-extension://') ||
+    origin.startsWith('moz-extension://')
+  );
+  const isAllowedWebOrigin = origin === 'https://trade.padre.gg' || origin === 'https://axiom.trade';
 
-  if (allowedOrigins.some(Boolean)) {
+  if (isExtensionOrigin || isAllowedWebOrigin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
   }
@@ -77,6 +78,16 @@ export default async function handler(req, res) {
       success: false,
       error: 'INVALID_REQUEST',
       message: 'License key and device ID are required'
+    });
+  }
+
+  // Validate environment
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('[Subscription Status API] Missing environment variables');
+    return res.status(500).json({
+      success: false,
+      error: 'SERVER_ERROR',
+      message: 'Server configuration error'
     });
   }
 
@@ -158,13 +169,27 @@ export default async function handler(req, res) {
       message = `License active for ${daysRemaining} more days`;
     }
 
-    // Get extension history (last 3)
-    const { data: extensions } = await supabase
-      .from('license_extensions')
-      .select('months_added, reason, created_at')
-      .eq('license_key', key)
-      .order('created_at', { ascending: false })
-      .limit(3);
+    // Get extension history (last 3) - this may fail if table doesn't exist
+    let extensions = [];
+    try {
+      const { data: extData, error: extError } = await supabase
+        .from('license_extensions')
+        .select('months_added, reason, created_at')
+        .eq('license_key', key)
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      if (!extError && extData) {
+        extensions = extData.map(ext => ({
+          monthsAdded: ext.months_added,
+          reason: ext.reason,
+          date: formatDate(ext.created_at)
+        }));
+      }
+    } catch (extErr) {
+      // Extension history is optional, don't fail the whole request
+      console.log('[Subscription Status API] Extension history not available:', extErr.message);
+    }
 
     // Build response
     const response = {
@@ -179,11 +204,7 @@ export default async function handler(req, res) {
         createdAt: formatDate(license.created_at),
         message: message,
         renewalUrl: 'https://discord.gg/honed', // Replace with actual Discord invite
-        extensions: extensions ? extensions.map(ext => ({
-          monthsAdded: ext.months_added,
-          reason: ext.reason,
-          date: formatDate(ext.created_at)
-        })) : []
+        extensions: extensions
       }
     };
 
