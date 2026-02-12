@@ -92,7 +92,10 @@ export default async function handler(req, res) {
   }
 
   try {
+    console.log('[Subscription Status API] Request received for key:', key?.substring(0, 8) + '...', 'deviceId:', deviceId?.substring(0, 8) + '...');
+
     // Verify device binding first
+    console.log('[Subscription Status API] Querying device_bindings...');
     const { data: binding, error: bindingError } = await supabase
       .from('device_bindings')
       .select('device_id, license_key')
@@ -100,11 +103,15 @@ export default async function handler(req, res) {
       .single();
 
     if (bindingError && bindingError.code !== 'PGRST116') {
+      console.error('[Subscription Status API] Binding error:', bindingError);
       throw bindingError;
     }
 
+    console.log('[Subscription Status API] Binding found:', !!binding);
+
     // Check if device is authorized for this license
     if (!binding || binding.device_id !== deviceId) {
+      console.log('[Subscription Status API] Device not authorized. Expected:', binding?.device_id, 'Got:', deviceId);
       return res.status(403).json({
         success: false,
         error: 'UNAUTHORIZED',
@@ -113,6 +120,7 @@ export default async function handler(req, res) {
     }
 
     // Get license details
+    console.log('[Subscription Status API] Querying license_keys...');
     const { data: license, error: licenseError } = await supabase
       .from('license_keys')
       .select('key, revoked, expires_at, created_at')
@@ -120,6 +128,7 @@ export default async function handler(req, res) {
       .single();
 
     if (licenseError) {
+      console.error('[Subscription Status API] License error:', licenseError);
       if (licenseError.code === 'PGRST116') {
         return res.status(404).json({
           success: false,
@@ -129,6 +138,8 @@ export default async function handler(req, res) {
       }
       throw licenseError;
     }
+
+    console.log('[Subscription Status API] License found, revoked:', license.revoked, 'expires_at:', license.expires_at);
 
     // Check if revoked
     if (license.revoked) {
@@ -211,11 +222,11 @@ export default async function handler(req, res) {
     return res.json(response);
 
   } catch (error) {
-    console.error('[Subscription Status API] Error:', error);
+    console.error('[Subscription Status API] Error:', error.message, error.stack);
     return res.status(500).json({
       success: false,
       error: 'SERVER_ERROR',
-      message: 'Failed to retrieve subscription status'
+      message: 'Failed to retrieve subscription status: ' + error.message
     });
   }
 }
