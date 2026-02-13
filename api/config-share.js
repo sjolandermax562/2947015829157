@@ -4,10 +4,50 @@
 // Routes:
 // GET    /api/config-share?action=browse&page=1&limit=20&own=false  - Browse configs
 // GET    /api/config-share?action=preview&id={configId}              - Preview config
-// POST   /api/config-share?action=upload                             - Upload config
+// POST   /api/config-share?action=upload                             - Upload config (requires auth)
 // POST   /api/config-share?action=copy&id={configId}                 - Copy config
-// PATCH  /api/config-share?action=visibility                          - Toggle visibility
-// DELETE /api/config-share?id={configId}                              - Delete config
+// PATCH  /api/config-share?action=visibility                          - Toggle visibility (requires auth + ownership)
+// DELETE /api/config-share?id={configId}                              - Delete config (requires auth + ownership)
+//
+// SECURITY: Uses anon key with RLS policies. Write operations require JWT authentication.
+
+import { jwtVerify } from 'jose';
+
+// SECURITY: No fallback - JWT_SECRET must be set in environment
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('[Config Share API] FATAL: JWT_SECRET environment variable is not set');
+}
+const secretKey = new TextEncoder().encode(JWT_SECRET || '');
+
+/**
+ * Verify JWT token and extract payload
+ * @param {string} token - JWT token from Authorization header
+ * @returns {Object|null} Token payload or null if invalid
+ */
+async function verifyToken(token) {
+  try {
+    const { payload } = await jwtVerify(token, secretKey);
+    if (payload.purpose !== 'honed-license') return null;
+    return payload;
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * Extract and verify JWT from request headers
+ * @param {Object} req - Request object
+ * @returns {Object|null} Token payload or null if invalid/missing
+ */
+async function getAuthPayload(req) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+  const token = authHeader.substring(7);
+  return await verifyToken(token);
+}
 
 export default async function handler(req, res) {
   // Set CORS headers
@@ -28,11 +68,11 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // Dynamic import for Supabase
+  // SECURITY: Use anon key with RLS policies instead of service key
   const { createClient } = await import('@supabase/supabase-js');
   const supabase = createClient(
     process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_KEY  // Use service key to bypass RLS
+    process.env.SUPABASE_ANON_KEY  // Use anon key - RLS policies will enforce access control
   );
 
   try {
@@ -159,7 +199,14 @@ async function handlePreview(req, res, supabase) {
 }
 
 // Upload config (POST /api/config-share?action=upload)
+// SECURITY: Requires authentication - uses device_id from JWT
 async function handleUpload(req, res, supabase) {
+  // Require authentication
+  const authPayload = await getAuthPayload(req);
+  if (!authPayload) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
   const { displayName, description, isPublic, configData } = req.body;
 
   if (!configData) {
@@ -176,8 +223,8 @@ async function handleUpload(req, res, supabase) {
     return res.status(400).json({ error: 'Config size exceeds 5MB limit' });
   }
 
-  // Generate a random device_id for anonymous uploads
-  const deviceId = 'anon-' + Math.random().toString(36).substring(2, 15);
+  // Use device_id from JWT for ownership tracking
+  const deviceId = authPayload.deviceId;
 
   const { data, error } = await supabase
     .from('shared_configs')
@@ -245,12 +292,34 @@ async function handleCopy(req, res, supabase) {
 }
 
 // Toggle visibility (PATCH /api/config-share?action=visibility)
+// SECURITY: Requires authentication + ownership verification
 async function handleVisibility(req, res, supabase) {
-  // Not available without auth - anyone can toggle visibility (for now)
+  // Require authentication
+  const authPayload = await getAuthPayload(req);
+  if (!authPayload) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
   const { configId, isPublic } = req.body;
 
   if (!configId || typeof isPublic !== 'boolean') {
     return res.status(400).json({ error: 'Missing configId or isPublic' });
+  }
+
+  // Verify ownership before updating
+  const { data: existingConfig, error: fetchError } = await supabase
+    .from('shared_configs')
+    .select('device_id')
+    .eq('id', configId)
+    .single();
+
+  if (fetchError || !existingConfig) {
+    return res.status(404).json({ error: 'Config not found' });
+  }
+
+  // SECURITY: Only the owner can change visibility
+  if (existingConfig.device_id !== authPayload.deviceId) {
+    return res.status(403).json({ error: 'Access denied - you do not own this config' });
   }
 
   const { data, error } = await supabase
@@ -261,7 +330,7 @@ async function handleVisibility(req, res, supabase) {
     .single();
 
   if (error || !data) {
-    return res.status(404).json({ error: 'Config not found or access denied' });
+    return res.status(500).json({ error: 'Failed to update config' });
   }
 
   return res.status(200).json({
@@ -271,11 +340,33 @@ async function handleVisibility(req, res, supabase) {
 }
 
 // Delete config (DELETE /api/config-share?id={configId})
+// SECURITY: Requires authentication + ownership verification
 async function handleDelete(req, res, supabase) {
-  // Not available without auth - anyone can delete (for now)
+  // Require authentication
+  const authPayload = await getAuthPayload(req);
+  if (!authPayload) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
   const configId = req.query.id;
   if (!configId) {
     return res.status(400).json({ error: 'Missing config ID' });
+  }
+
+  // Verify ownership before deleting
+  const { data: existingConfig, error: fetchError } = await supabase
+    .from('shared_configs')
+    .select('device_id')
+    .eq('id', configId)
+    .single();
+
+  if (fetchError || !existingConfig) {
+    return res.status(404).json({ error: 'Config not found' });
+  }
+
+  // SECURITY: Only the owner can delete
+  if (existingConfig.device_id !== authPayload.deviceId) {
+    return res.status(403).json({ error: 'Access denied - you do not own this config' });
   }
 
   const { data, error } = await supabase
@@ -286,7 +377,7 @@ async function handleDelete(req, res, supabase) {
     .single();
 
   if (error || !data) {
-    return res.status(404).json({ error: 'Config not found or access denied' });
+    return res.status(500).json({ error: 'Failed to delete config' });
   }
 
   return res.status(200).json({
